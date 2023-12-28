@@ -67,6 +67,7 @@ export type Location = {
    * (iOS only) The course of the location in degrees true North. Negative if course is invalid. (0.0 - 359.9 degrees, 0 being true North)
    */
   course?: number;
+  isFakeLocation?: boolean;
 };
 
 export type GetCurrentPositionOptions = {
