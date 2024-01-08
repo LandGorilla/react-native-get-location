@@ -5830,8 +5830,8 @@ react-native-codegen@^0.71.5:
     jscodeshift "^0.13.1"
     nullthrows "^1.1.1"
 
-"react-native-get-location@file:..":
-  version "3.0.1"
+react-native-get-location@../:
+  version "4.0.0"
 
 react-native-gradle-plugin@^0.71.15:
   version "0.71.15"

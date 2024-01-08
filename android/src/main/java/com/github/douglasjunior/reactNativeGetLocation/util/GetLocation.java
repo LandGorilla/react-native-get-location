@@ -31,6 +31,10 @@ import android.location.LocationManager;
 import android.os.Bundle;
 import android.os.Looper;
 import android.util.Log;
+import android.os.Build;
+import android.provider.Settings;
+import android.text.TextUtils;
+import android.content.Context;
 
 import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReadableMap;
@@ -42,13 +46,15 @@ import java.util.TimerTask;
 public class GetLocation {
 
     private final LocationManager locationManager;
+    private Context context;
 
     private Timer timer;
     private LocationListener listener;
     private Promise promise;
 
-    public GetLocation(LocationManager locationManager) {
+    public GetLocation(Context context, LocationManager locationManager) {
         this.locationManager = locationManager;
+        this.context = context;
     }
 
     public void get(ReadableMap options, final Promise promise) {
@@ -73,6 +79,8 @@ public class GetLocation {
                     if (location != null && !locationFound) {
                         locationFound = true;
                         WritableNativeMap resultLocation = new WritableNativeMap();
+                        boolean isMockLocation = isMockLocation(context, location);
+
                         resultLocation.putString("provider", location.getProvider());
                         resultLocation.putDouble("latitude", location.getLatitude());
                         resultLocation.putDouble("longitude", location.getLongitude());
@@ -81,6 +89,7 @@ public class GetLocation {
                         resultLocation.putDouble("speed", location.getSpeed());
                         resultLocation.putDouble("bearing", location.getBearing());
                         resultLocation.putDouble("time", location.getTime());
+                        resultLocation.putBoolean("isFakeLocation", isMockLocation);
                         promise.resolve(resultLocation);
                         stop();
                         clearReferences();
@@ -128,6 +137,20 @@ public class GetLocation {
             ex.printStackTrace();
             stop();
             promise.reject("UNAVAILABLE", "Location not available", ex);
+        }
+    }
+
+    public static boolean isMockLocation(Context context, Location location) {
+        if (location == null) {
+            return false;
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+            return location.isFromMockProvider();
+        } else {
+            return !TextUtils.isEmpty(Settings.Secure.getString(
+                    context.getContentResolver(),
+                    Settings.Secure.ALLOW_MOCK_LOCATION)) || location.getProvider().equals("mock");
         }
     }
 
