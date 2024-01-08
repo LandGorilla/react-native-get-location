@@ -52,10 +52,13 @@ public class ReactNativeGetLocationModule extends ReactContextBaseJavaModule {
 
     private LocationManager locationManager;
     private GetLocation getLocation;
+    private Context context;
+
 
     public ReactNativeGetLocationModule(ReactApplicationContext reactContext) {
         super(reactContext);
         try {
+            this.context = context;
             locationManager = (LocationManager) reactContext.getApplicationContext().getSystemService(Context.LOCATION_SERVICE);
         } catch (Exception ex) {
             ex.printStackTrace();
@@ -112,7 +115,7 @@ public class ReactNativeGetLocationModule extends ReactContextBaseJavaModule {
         if (getLocation != null) {
             getLocation.cancel();
         }
-        getLocation = new GetLocation(locationManager);
+        getLocation = new GetLocation(context, locationManager);
         getLocation.get(options, promise);
     }
 
