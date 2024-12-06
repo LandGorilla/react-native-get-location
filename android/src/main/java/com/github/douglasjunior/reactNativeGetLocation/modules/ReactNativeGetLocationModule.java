@@ -43,12 +43,18 @@ import com.facebook.react.bridge.WritableNativeMap;
 import com.github.douglasjunior.reactNativeGetLocation.util.GetLocation;
 import com.github.douglasjunior.reactNativeGetLocation.util.SettingsUtil;
 
+import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.LocationServices;
+
+
 import java.util.Timer;
 import java.util.TimerTask;
 
 public class ReactNativeGetLocationModule extends ReactContextBaseJavaModule {
 
     public static final String NAME = "ReactNativeGetLocation";
+
+    private FusedLocationProviderClient fusedLocationClient;
 
     private LocationManager locationManager;
     private GetLocation getLocation;
@@ -60,6 +66,12 @@ public class ReactNativeGetLocationModule extends ReactContextBaseJavaModule {
         try {
             this.context = context;
             locationManager = (LocationManager) reactContext.getApplicationContext().getSystemService(Context.LOCATION_SERVICE);
+
+            fusedLocationClient = LocationServices.getFusedLocationProviderClient(reactContext);
+
+            getLocation = new GetLocation(context, locationManager, fusedLocationClient);
+
+
         } catch (Exception ex) {
             ex.printStackTrace();
         }
@@ -115,7 +127,7 @@ public class ReactNativeGetLocationModule extends ReactContextBaseJavaModule {
         if (getLocation != null) {
             getLocation.cancel();
         }
-        getLocation = new GetLocation(context, locationManager);
+        getLocation = new GetLocation(context, locationManager,fusedLocationClient);
         getLocation.get(options, promise);
     }
 

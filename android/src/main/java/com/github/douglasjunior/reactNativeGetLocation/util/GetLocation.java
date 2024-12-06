@@ -24,13 +24,14 @@
 
 package com.github.douglasjunior.reactNativeGetLocation.util;
 
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.location.Criteria;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Bundle;
 import android.os.Looper;
-import android.util.Log;
 import android.os.Build;
 import android.provider.Settings;
 import android.text.TextUtils;
@@ -40,11 +41,20 @@ import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.bridge.WritableNativeMap;
 
+import androidx.core.app.ActivityCompat;
+
+import com.google.android.gms.location.Granularity;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.LocationCallback;
+import com.google.android.gms.location.LocationResult;
+import com.google.android.gms.location.Priority;
+
 import java.util.Timer;
 import java.util.TimerTask;
 
 public class GetLocation {
-
+    private final FusedLocationProviderClient fusedLocationClient;
     private final LocationManager locationManager;
     private Context context;
 
@@ -52,7 +62,8 @@ public class GetLocation {
     private LocationListener listener;
     private Promise promise;
 
-    public GetLocation(Context context, LocationManager locationManager) {
+    public GetLocation(Context context, LocationManager locationManager,FusedLocationProviderClient fusedLocationClient) {
+        this.fusedLocationClient = fusedLocationClient;
         this.locationManager = locationManager;
         this.context = context;
     }
@@ -68,66 +79,10 @@ public class GetLocation {
             boolean enableHighAccuracy = options.hasKey("enableHighAccuracy") && options.getBoolean("enableHighAccuracy");
             long timeout = options.hasKey("timeout") ? (long) options.getDouble("timeout") : 0;
 
-            Criteria criteria = new Criteria();
-            criteria.setAccuracy(enableHighAccuracy ? Criteria.ACCURACY_FINE : Criteria.ACCURACY_COARSE);
-
-            listener = new LocationListener() {
-                private boolean locationFound = false;
-
-                @Override
-                public synchronized void onLocationChanged(Location location) {
-                    if (location != null && !locationFound) {
-                        locationFound = true;
-                        WritableNativeMap resultLocation = new WritableNativeMap();
-                        boolean isMockLocation = isMockLocation(context, location);
-
-                        resultLocation.putString("provider", location.getProvider());
-                        resultLocation.putDouble("latitude", location.getLatitude());
-                        resultLocation.putDouble("longitude", location.getLongitude());
-                        resultLocation.putDouble("accuracy", location.getAccuracy());
-                        resultLocation.putDouble("altitude", location.getAltitude());
-                        resultLocation.putDouble("speed", location.getSpeed());
-                        resultLocation.putDouble("bearing", location.getBearing());
-                        resultLocation.putDouble("time", location.getTime());
-                        resultLocation.putBoolean("isFakeLocation", isMockLocation);
-                        promise.resolve(resultLocation);
-                        stop();
-                        clearReferences();
-                    }
-                }
-
-                @Override
-                public void onStatusChanged(String provider, int status, Bundle extras) {
-
-                }
-
-                @Override
-                public void onProviderEnabled(String provider) {
-
-                }
-
-                @Override
-                public void onProviderDisabled(String provider) {
-
-                }
-            };
-
-            locationManager.requestLocationUpdates(0L, 0F, criteria, listener, Looper.myLooper());
-
-            if (timeout > 0) {
-                timer = new Timer();
-                timer.schedule(new TimerTask() {
-                    @Override
-                    public void run() {
-                        try {
-                            promise.reject("TIMEOUT", "Location timed out");
-                            stop();
-                            clearReferences();
-                        } catch (Exception ex) {
-                            ex.printStackTrace();
-                        }
-                    }
-                }, timeout);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) { // Android 14 o superior
+                useNewLocationMethod(enableHighAccuracy, timeout, promise,context);
+            } else {
+                useOldLocationMethod(enableHighAccuracy, timeout, promise,context);
             }
         } catch (SecurityException ex) {
             ex.printStackTrace();
@@ -139,6 +94,7 @@ public class GetLocation {
             promise.reject("UNAVAILABLE", "Location not available", ex);
         }
     }
+
 
     public static boolean isMockLocation(Context context, Location location) {
         if (location == null) {
@@ -191,4 +147,130 @@ public class GetLocation {
         }
         return false;
     }
+
+
+    private void useNewLocationMethod(boolean enableHighAccuracy, long timeout, final Promise promise, Context context) {
+        try {
+            long locationTimeout = timeout > 0 ? timeout : 10000; // Default interval of 10 seconds
+            int priority = enableHighAccuracy ? Priority.PRIORITY_HIGH_ACCURACY : Priority.PRIORITY_BALANCED_POWER_ACCURACY;
+
+            LocationRequest locationRequest = new LocationRequest.Builder(priority, locationTimeout)
+                    .setGranularity(Granularity.GRANULARITY_FINE)
+                    .setMinUpdateDistanceMeters(10) // Minimum update distance
+                    .build();
+
+            LocationCallback locationCallback = new LocationCallback() {
+                @Override
+                public void onLocationResult(LocationResult locationResult) {
+                    if (locationResult != null && !locationResult.getLocations().isEmpty()) {
+                        Location location = locationResult.getLastLocation();
+                        if (location != null) {
+                            WritableNativeMap resultLocation = new WritableNativeMap();
+                            boolean isMockLocation = isMockLocation(GetLocation.this.context, location);
+
+                            resultLocation.putString("provider", location.getProvider());
+                            resultLocation.putDouble("latitude", location.getLatitude());
+                            resultLocation.putDouble("longitude", location.getLongitude());
+                            resultLocation.putDouble("accuracy", location.getAccuracy());
+                            resultLocation.putDouble("altitude", location.getAltitude());
+                            resultLocation.putDouble("speed", location.getSpeed());
+                            resultLocation.putDouble("bearing", location.getBearing());
+                            resultLocation.putDouble("time", location.getTime());
+                            resultLocation.putBoolean("isFakeLocation", isMockLocation);
+
+                            promise.resolve(resultLocation);
+                            stop();
+                            clearReferences();
+                        }
+                    }
+                }
+            };
+
+            if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+                    ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                // TODO: Handle permission request if not granted
+                return;
+            }
+
+            fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper());
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            promise.reject("ERROR", "Error using new location method", ex);
+        }
+    }
+
+
+    private void useOldLocationMethod(boolean enableHighAccuracy, long timeout, final Promise promise, Context context) {
+        Criteria criteria = new Criteria();
+        criteria.setAccuracy(enableHighAccuracy ? Criteria.ACCURACY_FINE : Criteria.ACCURACY_COARSE);
+
+        listener = new LocationListener() {
+            private boolean locationFound = false;
+
+            @Override
+            public synchronized void onLocationChanged(Location location) {
+                if (location != null && !locationFound) {
+                    locationFound = true;
+                    WritableNativeMap resultLocation = new WritableNativeMap();
+                    boolean isMockLocation = isMockLocation(GetLocation.this.context, location);
+
+                    resultLocation.putString("provider", location.getProvider());
+                    resultLocation.putDouble("latitude", location.getLatitude());
+                    resultLocation.putDouble("longitude", location.getLongitude());
+                    resultLocation.putDouble("accuracy", location.getAccuracy());
+                    resultLocation.putDouble("altitude", location.getAltitude());
+                    resultLocation.putDouble("speed", location.getSpeed());
+                    resultLocation.putDouble("bearing", location.getBearing());
+                    resultLocation.putDouble("time", location.getTime());
+                    resultLocation.putBoolean("isFakeLocation", isMockLocation);
+
+                    promise.resolve(resultLocation);
+                    stop();
+                    clearReferences();
+                }
+            }
+
+            @Override
+            public void onStatusChanged(String provider, int status, Bundle extras) {
+            }
+
+            @Override
+            public void onProviderEnabled(String provider) {
+            }
+
+            @Override
+            public void onProviderDisabled(String provider) {
+            }
+        };
+
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            // TODO: Consider calling
+            //    ActivityCompat#requestPermissions
+            // here to request the missing permissions, and then overriding
+            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+            //                                          int[] grantResults)
+            // to handle the case where the user grants the permission. See the documentation
+            // for ActivityCompat#requestPermissions for more details.
+            return;
+        }
+        locationManager.requestLocationUpdates(0L, 0F, criteria, listener, Looper.myLooper());
+
+        if (timeout > 0) {
+            timer = new Timer();
+            timer.schedule(new TimerTask() {
+                @Override
+                public void run() {
+                    try {
+                        promise.reject("TIMEOUT", "Location timed out");
+                        stop();
+                        clearReferences();
+                    } catch (Exception ex) {
+                        ex.printStackTrace();
+                    }
+                }
+            }, timeout);
+        }
+    }
+
+
 }
