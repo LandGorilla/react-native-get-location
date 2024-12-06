@@ -36,6 +36,7 @@ import android.os.Build;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.content.Context;
+import android.util.Log;
 
 import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReadableMap;
@@ -78,10 +79,12 @@ public class GetLocation {
 
             boolean enableHighAccuracy = options.hasKey("enableHighAccuracy") && options.getBoolean("enableHighAccuracy");
             long timeout = options.hasKey("timeout") ? (long) options.getDouble("timeout") : 0;
-
+            Log.d("ValidandoVersion", "validando afuera");
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) { // Android 14 o superior
+                Log.d("ValidandoVersion-NEW", "NEW");
                 useNewLocationMethod(enableHighAccuracy, timeout, promise,context);
             } else {
+                Log.d("ValidandoVersion-OLD", "OLD");
                 useOldLocationMethod(enableHighAccuracy, timeout, promise,context);
             }
         } catch (SecurityException ex) {
@@ -91,7 +94,7 @@ public class GetLocation {
         } catch (Exception ex) {
             ex.printStackTrace();
             stop();
-            promise.reject("UNAVAILABLE", "Location not available", ex);
+            promise.reject("UNAVAILABLE", "Location not available-error", ex);
         }
     }
 
@@ -150,6 +153,7 @@ public class GetLocation {
 
 
     private void useNewLocationMethod(boolean enableHighAccuracy, long timeout, final Promise promise, Context context) {
+        Log.d("useNewLocationMethod", "useNewLocationMethod called");
         try {
             long locationTimeout = timeout > 0 ? timeout : 10000; // Default interval of 10 seconds
             int priority = enableHighAccuracy ? Priority.PRIORITY_HIGH_ACCURACY : Priority.PRIORITY_BALANCED_POWER_ACCURACY;
@@ -186,13 +190,14 @@ public class GetLocation {
                 }
             };
 
-            if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
-                    ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-                // TODO: Handle permission request if not granted
-                return;
-            }
+//            if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+//                    ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+//                // TODO: Handle permission request if not granted
+//                return;
+//            }
 
             fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper());
+            Log.d("useNewLocationMethod", "useNewLocationMethod called success");
         } catch (Exception ex) {
             ex.printStackTrace();
             promise.reject("ERROR", "Error using new location method", ex);
@@ -201,18 +206,23 @@ public class GetLocation {
 
 
     private void useOldLocationMethod(boolean enableHighAccuracy, long timeout, final Promise promise, Context context) {
+        Log.d("LocationMethod", "useOldLocationMethod called");
+
         Criteria criteria = new Criteria();
         criteria.setAccuracy(enableHighAccuracy ? Criteria.ACCURACY_FINE : Criteria.ACCURACY_COARSE);
+        Log.d("LocationMethod", "Criteria set with accuracy: " + (enableHighAccuracy ? "ACC_FINE" : "ACC_COARSE"));
 
         listener = new LocationListener() {
             private boolean locationFound = false;
 
             @Override
             public synchronized void onLocationChanged(Location location) {
+                Log.d("LocationMethod", "onLocationChanged called");
                 if (location != null && !locationFound) {
                     locationFound = true;
                     WritableNativeMap resultLocation = new WritableNativeMap();
                     boolean isMockLocation = isMockLocation(GetLocation.this.context, location);
+                    Log.d("LocationMethod", "Location received: Latitude=" + location.getLatitude() + ", Longitude=" + location.getLongitude());
 
                     resultLocation.putString("provider", location.getProvider());
                     resultLocation.putDouble("latitude", location.getLatitude());
@@ -225,6 +235,7 @@ public class GetLocation {
                     resultLocation.putBoolean("isFakeLocation", isMockLocation);
 
                     promise.resolve(resultLocation);
+                    Log.d("LocationMethod", "Location data sent to promise");
                     stop();
                     clearReferences();
                 }
@@ -232,28 +243,28 @@ public class GetLocation {
 
             @Override
             public void onStatusChanged(String provider, int status, Bundle extras) {
+                Log.d("LocationMethod", "onStatusChanged: provider=" + provider + ", status=" + status);
             }
 
             @Override
             public void onProviderEnabled(String provider) {
+                Log.d("LocationMethod", "onProviderEnabled: provider=" + provider);
             }
 
             @Override
             public void onProviderDisabled(String provider) {
+                Log.d("LocationMethod", "onProviderDisabled: provider=" + provider);
             }
         };
 
-        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            // TODO: Consider calling
-            //    ActivityCompat#requestPermissions
-            // here to request the missing permissions, and then overriding
-            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-            //                                          int[] grantResults)
-            // to handle the case where the user grants the permission. See the documentation
-            // for ActivityCompat#requestPermissions for more details.
-            return;
-        }
+//        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+//                && ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+//            Log.d("LocationMethod", "Permissions not granted");
+//            return;
+//        }
+
         locationManager.requestLocationUpdates(0L, 0F, criteria, listener, Looper.myLooper());
+//        Log.d("LocationMethod", "Location updates requested");
 
         if (timeout > 0) {
             timer = new Timer();
@@ -261,11 +272,12 @@ public class GetLocation {
                 @Override
                 public void run() {
                     try {
+                        Log.d("LocationMethod", "Timeout reached");
                         promise.reject("TIMEOUT", "Location timed out");
                         stop();
                         clearReferences();
                     } catch (Exception ex) {
-                        ex.printStackTrace();
+                        Log.e("LocationMethod", "Error in timeout task", ex);
                     }
                 }
             }, timeout);
